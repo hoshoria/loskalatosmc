@@ -1,0 +1,67 @@
+name: Release mods on tag
+
+on:
+  push:
+    tags:
+      - 'v*'     # se ejecuta sólo cuando empujas tags que empiezan con v (p. ej. v1.0)
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get tag and date
+        id: meta
+        run: |
+          # tag: extrae el nombre del tag de la ref, ej. refs/tags/v1.0 -> v1.0
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          DATE=$(date -u +%Y%m%d)   # YYYYMMDD en UTC
+          ZIP_NAME="mods-${DATE}-v${TAG_NAME}.zip"
+
+          echo "tag=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "date=${DATE}" >> $GITHUB_OUTPUT
+          echo "zip_name=${ZIP_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Create zip (mods folder)
+        run: |
+          ZIP="${{ steps.meta.outputs.zip_name }}"
+          echo "Creando $ZIP"
+          zip -r "$ZIP" mods
+          ls -lh "$ZIP"
+        shell: bash
+
+      - name: Create Release for tag
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          release_name: "mods - ${{ steps.meta.outputs.date }} - ${{ steps.meta.outputs.tag }}"
+          body: "Release automática para tag ${{ steps.meta.outputs.tag }} — ${{ steps.meta.outputs.zip_name }}"
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload zip as release asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./${{ steps.meta.outputs.zip_name }}
+          asset_name: ${{ steps.meta.outputs.zip_name }}
+          asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Print download URL
+        run: |
+          USER="$(cut -d'/' -f1 <<< "$GITHUB_REPOSITORY")"
+          REPO="$(cut -d'/' -f2 <<< "$GITHUB_REPOSITORY")"
+          TAG="${{ steps.meta.outputs.tag }}"
+          ZIP="${{ steps.meta.outputs.zip_name }}"
+          echo "URL de descarga:"
+          echo "https://github.com/$USER/$REPO/releases/download/$TAG/$ZIP"
