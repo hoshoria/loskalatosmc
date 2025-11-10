@@ -1,56 +1,40 @@
-name: Release mods on tag
+name: Add mods zip to Release
 
 on:
-  push:
-    tags:
-      - 'v*'     # se ejecuta sólo cuando empujas tags que empiezan con v (p. ej. v1.0)
+  release:
+    types: [created, published]   # se ejecuta cuando creas o publicas una Release
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  upload-zip:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Get tag and date
+      - name: Prepare variables
         id: meta
         run: |
-          # tag: extrae el nombre del tag de la ref, ej. refs/tags/v1.0 -> v1.0
-          TAG_NAME="${GITHUB_REF#refs/tags/}"
-          DATE=$(date -u +%Y%m%d)   # YYYYMMDD en UTC
-          ZIP_NAME="mods-${DATE}-v${TAG_NAME}.zip"
+          TAG="${{ github.event.release.tag_name }}"
+          DATE=$(date -u +%Y%m%d)
+          ZIP_NAME="mods-${DATE}-v${TAG}.zip"
 
-          echo "tag=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "date=${DATE}" >> $GITHUB_OUTPUT
           echo "zip_name=${ZIP_NAME}" >> $GITHUB_OUTPUT
 
-      - name: Create zip (mods folder)
+      - name: Create zip
         run: |
-          ZIP="${{ steps.meta.outputs.zip_name }}"
-          echo "Creando $ZIP"
-          zip -r "$ZIP" mods
-          ls -lh "$ZIP"
-        shell: bash
+          zip -r "${{ steps.meta.outputs.zip_name }}" mods
+          ls -lh "${{ steps.meta.outputs.zip_name }}"
 
-      - name: Create Release for tag
-        id: create_release
-        uses: actions/create-release@v1
-        with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          release_name: "mods - ${{ steps.meta.outputs.date }} - ${{ steps.meta.outputs.tag }}"
-          body: "Release automática para tag ${{ steps.meta.outputs.tag }} — ${{ steps.meta.outputs.zip_name }}"
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload zip as release asset
+      - name: Upload zip to the existing Release
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          # github.event.release.upload_url contiene la URL de la release existente
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./${{ steps.meta.outputs.zip_name }}
           asset_name: ${{ steps.meta.outputs.zip_name }}
           asset_content_type: application/zip
@@ -59,9 +43,9 @@ jobs:
 
       - name: Print download URL
         run: |
-          USER="$(cut -d'/' -f1 <<< "$GITHUB_REPOSITORY")"
-          REPO="$(cut -d'/' -f2 <<< "$GITHUB_REPOSITORY")"
+          OWNER=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f1)
+          REPO=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f2)
           TAG="${{ steps.meta.outputs.tag }}"
           ZIP="${{ steps.meta.outputs.zip_name }}"
-          echo "URL de descarga:"
-          echo "https://github.com/$USER/$REPO/releases/download/$TAG/$ZIP"
+          echo "Download URL:"
+          echo "https://github.com/$OWNER/$REPO/releases/download/$TAG/$ZIP"
